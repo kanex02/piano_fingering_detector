@@ -152,31 +152,15 @@ def hough_merge_pipeline(lines, min):
     return super_lines_final
 
 
-# hough_merged_image: Takes an image, converts to grayscale, finds a list of the merged Hough Lines and returns the lists of merged lines
-#                       input: img - reference image to compute Hough Line Transform on
-#                       input: t1 - Canny Threshold 1
-#                       input: t2 - Canny Threshold 2
-#                       input: g1 - Hough Line Threshold
-#                       input: g2 - Hough Minimum Line Length
-#                       input: g3 - Hough Maximum Line Gap
-#                       input: min - Minimum distance apart for segments to be merged (input into hough_merge_pipeline)
-def hough_merged_image(img, t1, t2, g1, g2, g3, min):
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+def hough_merged_image(img, g1, g2, g3, min):
 
-    edges = cv2.Canny(gray, threshold1=t1, threshold2=t2)
-    cv2.imwrite('predictions/lines_edges.jpg', edges)  # Save the image Canny Edge Detection as an image
-
-    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=g1, minLineLength=g2, maxLineGap=g3)
+    lines = cv2.HoughLinesP(img, 1, np.pi / 180, threshold=g1, minLineLength=g2, maxLineGap=g3)
     _lines = []
     for line in lines:
         for leftx, boty, rightx, topy in line:
             _lines.append([(leftx, boty), (rightx, topy)])
 
     merged_lines_x = flatten_and_merge(_lines, min)
-
-    merge_close(merged_lines_x, 50, 1)
-
-    # merged_lines_x = flatten_and_merge(merged_lines_x, min*1.1)
 
     return merged_lines_x  # , merged_lines_all # as merged_lines_y not required for future work
 
@@ -194,28 +178,26 @@ def combine(line1, line2, thresh_dist, thresh_angle):
                 max_dist = dist
                 new_line = [point1, point2]
 
+    line1.sort()
+    line1_angle = abs(
+        math.degrees(math.atan2((line1[0][1] - line1[1][1]), (line1[0][0] - line1[1][0]))))
+    line1_length = (line1[0][0] - line1[1][0])**2 +(line1[0][1] - line1[1][1])**2
+
+    line2.sort()
+    line2_angle = abs(
+        math.degrees(math.atan2((line2[0][1] - line2[1][1]), (line2[0][0] - line2[1][0]))))
+    line2_length = (line2[0][0] - line2[1][0])**2 +(line2[0][1] - line2[1][1])**2
+
+    new_line.sort()
     new_angle = abs(
         math.degrees(math.atan2((new_line[0][1] - new_line[1][1]), (new_line[0][0] - new_line[1][0]))))
+    new_line_length = (new_line[0][0] - new_line[1][0])**2 +(new_line[0][1] - new_line[1][1])**2
 
-
-    # print(new_angle)
-    # print(min_dist)
-    # if (180 - thresh_angle < new_angle < 180 + thresh_angle) or (-thresh_angle < new_angle < thresh_angle):
-    #     print("ANGLE")
-    # if min_dist < thresh_dist:
-    #     print("DIST")
-    # print(new_line)
-    # img_merged_lines = cv2.imread('original.jpg')  # copy of reference image to find horizontal lines
-    # cv2.line(img_merged_lines, (new_line[0][0], new_line[0][1]), (new_line[1][0], new_line[1][1]), (0, 255, 0), 2)
-    # cv2.line(img_merged_lines, (line1[0][0], line1[0][1]), (line1[1][0], line1[1][1]), (0, 0, 255), 2)
-    # cv2.line(img_merged_lines, (line2[0][0], line2[0][1]), (line2[1][0], line2[1][1]), (0, 0, 255), 2)
-    # while cv2.waitKey(1) < 0:
-    #     cv2.imshow("frame", cv2.resize(img_merged_lines, (960, 540)))
-
-    if not (180 - thresh_angle < new_angle < 180 + thresh_angle) and not (-thresh_angle < new_angle < thresh_angle):
+    if not (line1_angle - thresh_angle < new_angle < line1_angle + thresh_angle) or not \
+            (line2_angle - thresh_angle < new_angle < line2_angle + thresh_angle):
         return
 
-    if min_dist < thresh_dist:
+    if min_dist < thresh_dist and line1_length < new_line_length and line2_length < new_line_length:
         return new_line
 
 

@@ -2,7 +2,7 @@
 # piano.py:  Main file to run to play the piano program
 # - - - - - - - - - - - - - - - - - - - - - - - - -
 import itertools
-
+import numpy as np
 import cv2
 from fiducial import *
 from fingers import *
@@ -10,7 +10,7 @@ from merged_hough import *
 from pygame import midi
 import os
 
-IMAGE_LOCATION = 'original.jpg'
+IMAGE_LOCATION = 'predictions/original.jpg'
 MIDI_KEY_DOWN = 0x90
 MIDI_BLACK_KEYS = [82, 80, 78, 75, 73, 70, 68, 66, 63, 61, 58, 56, 54, 51, 49, 46, 44, 42, 39, 37]
 MIDI_WHITE_KEYS = [84, 83, 81, 79, 77, 76, 74, 72, 71, 69, 67, 65, 64, 62, 60, 59, 57, 55, 53, 52, 50, 48, 47, 45, 43,
@@ -83,115 +83,96 @@ FINGERS = {
 
 def main():
     print(os.getcwd())
-    # - - - - - - - - Uncomment for timer to take reference image - - - - - - - -
+    if not os.path.exists("predictions"):
+        os.mkdir("predictions")
 
-    # cap = cv2.VideoCapture(0)  # Open the first camera connected to the computer.
-    # cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-    # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-    #
-    # try:
-    #     camera_matrix = np.loadtxt('./camera_matrix.npy')
-    #     distortion_coeff = np.loadtxt('./distortion_coeff.npy')
-    #     ret, frame = cap.read()
-    #     h, w = frame.shape[:2]
-    #     new_camera_matrix, roi = cv2.getOptimalNewCameraMatrix(camera_matrix, distortion_coeff, (w, h), 1, (w, h))
-    #     mapx, mapy = cv2.initUndistortRectifyMap(camera_matrix, distortion_coeff, None, new_camera_matrix, (w, h),
-    #                                              cv2.CV_16SC2)
-    # except:
-    #     raise FileExistsError("Missing Camera Matrices and Distortion Files.")
-    #
-    # ret, frame = cap.read()
-    # time_left = 500
-    #
-    # while True:
-    #     ret, frame = cap.read()
-    #     original = cv2.undistort(frame, camera_matrix, distortion_coeff, None, new_camera_matrix)
-    #     cv2.putText(frame, str(time_left), (10, 70), cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 2)
-    #     time_left -= 1
-    #
-    #     if time_left <= 0:
-    #         cv2.imwrite(IMAGE_LOCATION, original)
-    #         break
-    #
-    #     cv2.imshow("frame", original)
-    #     cv2.waitKey(1)
-    #
-    # cv2.destroyAllWindows()
-    # return
-    #
+    # take_reference_image("predictions/original.jpg")
+
     # - - - - - - - - - Find fiducial location - - - - - - - - - - - - - - - - - -
-    img = cv2.imread(IMAGE_LOCATION)
+    img = cv2.imread("predictions/original.jpg")
     top, bottom = fiducial_detect(img)
     img[0:top - 20, 0:] = list(itertools.repeat(list(itertools.repeat([0, 0, 0], len(img[0]))), top - 20))
-    cv2.imwrite(IMAGE_LOCATION, img)
+    img[bottom:1080, 0:] = list(itertools.repeat(list(itertools.repeat([0, 0, 0], len(img[0]))), 1080-bottom))
+    cv2.imwrite("predictions/cropped.jpg", img)
     # #
     # return
 
-    # - - - - - - Hough Line on Reference Image - - - - - - - - - - - - - - - - -
-    img = cv2.imread(IMAGE_LOCATION)
-    # hough_merged_image(img, 100, 150, 5, 15, 5, 25)
-    merged_lines_x = hough_merged_image(img, 105, 150, 9, 9, 7, 12)
+    # - - - - - - Contrast - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    img_merged_lines = cv2.imread(IMAGE_LOCATION)  # copy of reference image to find horizontal lines
-    # t_img = img_merged_lines.copy()
-    for line in merged_lines_x:
-        cv2.line(img_merged_lines, (line[0][0], line[0][1]), (line[1][0], line[1][1]), (0, 0, 255), 2)
+    img = cv2.imread("predictions/cropped.jpg")
+    img = cv2.blur(img, (20, 5))
+    img = cv2.addWeighted(img, 10, img, 0, -1500)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    cv2.imwrite('predictions/contrast.jpg', img)
 
-    cv2.imwrite('predictions/hough.jpg', img_merged_lines)  # draws all Hough lines onto image and saves
-
-    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    #
     # return
 
-    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    # - - - - - - Canny - - - - - - - - - - - - - - - - -
+    img = cv2.imread('predictions/contrast.jpg')
+
+    edges = cv2.Canny(img, threshold1=80, threshold2=130)
+    cv2.imwrite('predictions/canny.jpg', edges)  # Save the image Canny Edge Detection as an image
+
+    # - - - - - - - - Hough - - -
+
+    merged_lines_x = hough_merged_image(edges, 9, 10, 35, 10)
+
+    img = cv2.imread('predictions/cropped.jpg')
+
+    for line in merged_lines_x:
+        cv2.line(img, (line[0][0], line[0][1]), (line[1][0], line[1][1]), (0, 0, 255), 2)
+
+    cv2.imwrite('predictions/hough.jpg', img)
+
+    # - - - - - - - - - - - - - Merge - - - - - - - - - - - - - - - -
+
+    img = cv2.imread('predictions/cropped.jpg')
+    merge_close(merged_lines_x, 30, 1)
+    for line in merged_lines_x:
+        cv2.line(img, (line[0][0], line[0][1]), (line[1][0], line[1][1]), (0, 0, 255), 2)
+    cv2.imwrite('predictions/merged.jpg', img)
 
     # - - - - - - Find longest horizontal lines for keyboard edges - - - - - - - -
     horizontals = []
     threshold_size = 200  # size threshold to determine if line is long enough
 
     for line in merged_lines_x:
-        if top < line[0][1] < bottom:
+        if top < line[0][1] < bottom-40 and top < line[1][1] < bottom-40:
             if abs(line[0][0] - line[1][0]) > threshold_size:
                 horizontals.append(sorted(line))
 
-    ed = sorted(horizontals, key=lambda x: x[0][1])  # sort from top to bottom
+    ed = sorted(horizontals, key=lambda x: (x[0][0]-x[1][0])**2 + (x[0][1]-x[1][1]) ** 2, reverse=True)  # sort by length
 
-    print(ed)
-    p = cv2.imread(IMAGE_LOCATION)
+    p = cv2.imread('predictions/cropped.jpg')
     for e in ed[0:2]:
+        e.sort()
         cv2.line(p, e[0], e[1], (255, 0, 0), 2)
-    cv2.imwrite('predictions/keyboard_longest_lines.jpg', p)  # draw longest two lines onto image and save
-    # # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    # return
-    #
-    # - - - - - - - - - - Determine corners of keyboard - - - - - - - - - - - - - - - - -
+    cv2.imwrite('predictions/selected_lines.jpg', p)  # draw longest two lines onto image and save
+
+    ed.sort(key=lambda x: x[0][1])
+
+    # Elongate top line since the keyboard is a little rounded
+    ed[0][0] = (ed[0][0][0]-10, ed[0][0][1])
+    ed[0][1] = (ed[0][1][0]+10, ed[0][1][1])
+
     # Corners of keyboard taken from the reference image
-    vert = [0] * 4
+    vert = [(0, 0)] * 4
     vert[0] = ed[0][0]
     vert[1] = ed[0][1]
     vert[2] = ed[1][1]
     vert[3] = ed[1][0]
-    vert = np.float32(vert)  # turn into numpy array
-    # # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    #
-    # # - - - - - - - - - Determing corners of output frame - - - - - - - - - - - - - - -
-    height, width = img_merged_lines.shape[:2]
+    vert = np.float32(vert)
 
-    outs = [0] * 4
-    outs[0] = (0, 0)
-    outs[1] = (width - 0, 0)
-    outs[2] = (width - 0, height - 0)
-    outs[3] = (0, height - 0)
-    outs = np.float32(outs)
-    # # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    #
+    # Corners of output
+    height, width = p.shape[:2]
+    outs = np.float32([(0, 0), (width, 0), (width, height), (0, height)])
+
     # # - - - - - - - - - - - - Perspective Transform - - - - - - - - - - - - - - - - - - -
-    perspective_image = cv2.imread(IMAGE_LOCATION)
+    perspective_image = cv2.imread("predictions/original.jpg")
     M = cv2.getPerspectiveTransform(vert, outs)
     out = cv2.warpPerspective(perspective_image, M, (width, height))
     cv2.imwrite('predictions/transformed.jpg', out)  # save perspective transform image
-    # # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    #
+
     # # - - - - - - - - - - - Draw on key segmentation - - - - - - - - - - - - - - - - - -
     perspective_keys = out.copy()
 
@@ -226,8 +207,7 @@ def main():
     draw_black_keys(black_key_base_coord, height, perspective_keys, black_keys)
 
     cv2.imwrite('predictions/transformed_withlines.jpg', perspective_keys)  # saves drawn on lines
-    # # # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    # return
+
     # # - - - - - - - - - - - Start of main function to run in real-time  - - - - - - - - - - - - - -
 
     cap = cv2.VideoCapture(0)  # Open the first camera connected to the computer.
@@ -246,6 +226,7 @@ def main():
 
     midi.init()
     midi_input = midi.Input(midi.get_default_input_id())
+    output = []
 
     while True:
 
@@ -254,6 +235,8 @@ def main():
         height, width = new_img.shape[:2]
 
         warped = cv2.warpPerspective(new_img, M, (width, height))
+        draw_white_keys(black_key_base_coord, height, warped, white_note_borders)
+        draw_black_keys(black_key_base_coord, height, warped, black_keys)
 
         if midi_input.poll():
             event = midi_input.read(1)
@@ -264,9 +247,8 @@ def main():
 
                 finger_points = tuple(map(lambda point: finger_transform(M, point), fingers))
 
-                out_keys = perspective_keys.copy()
                 for point in finger_points:
-                    cv2.circle(out_keys, point, 3, (0, 0, 255), 6)
+                    cv2.circle(warped, point, 3, (0, 0, 255), 6)
 
                 key = event[0][0][1]
                 fingers_on_note = []
@@ -284,14 +266,45 @@ def main():
                                 and (border[0] < coord[0] < border[1]):
                             fingers_on_note.append((finger, coord))
 
+                note_name = MIDI_TO_NOTES[key]
                 if fingers_on_note:
-                    print(MIDI_TO_NOTES[key],
-                          'played with',
-                          FINGERS[sorted(fingers_on_note, key=lambda x: x[1][1])[0][0]])
+                    finger_name = FINGERS[sorted(fingers_on_note, key=lambda x: x[1][1])[0][0]]
+                    print(note_name, 'played with', finger_name)
+                    output.append(note_name + ';' + finger_name + "\n")
+                else:
+                    print(note_name, 'MISSED')
+                    output.append(note_name + ';missed\n')
 
         scaled_down = cv2.resize(warped, (960, 540))
         cv2.imshow("Image", scaled_down)  # show current seen image from camera lens
-        cv2.waitKey(1)
+        if cv2.waitKey(1) != -1:
+            break
+
+    file = open("output.txt", "w")
+    file.writelines(output)
+    file.close()
+
+
+def take_reference_image(output_location):
+    cap = cv2.VideoCapture(0)  # Open the first camera connected to the computer.
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+    try:
+        camera_matrix = np.loadtxt('./camera_matrix.npy')
+        distortion_coeff = np.loadtxt('./distortion_coeff.npy')
+        ret, frame = cap.read()
+        h, w = frame.shape[:2]
+        new_camera_matrix, roi = cv2.getOptimalNewCameraMatrix(camera_matrix, distortion_coeff, (w, h), 1, (w, h))
+    except:
+        raise FileExistsError("Missing Camera Matrices and Distortion Files.")
+    original = None
+    while cv2.waitKey(1) == -1:
+        ret, frame = cap.read()
+        original = cv2.undistort(frame, camera_matrix, distortion_coeff, None, new_camera_matrix)
+        scaled_down = cv2.resize(original, (960, 540))
+        cv2.imshow("Image", scaled_down)
+    cv2.imwrite(output_location, original)
+    cv2.destroyAllWindows()
 
 
 def is_black_note(coord, black_notes, threshold):
@@ -307,19 +320,19 @@ def finger_transform(M, finger_point):
     return coords
 
 
-def draw_black_keys(black, height, perspective_keys, black_keys):
+def draw_black_keys(black, height, keyboard, black_keys):
     for key in black_keys:
         for x in key:
-            cv2.line(perspective_keys, (x, black), (x, height), (255, 0, 0), 2)
+            cv2.line(keyboard, (x, black), (x, height), (255, 0, 0), 2)
 
 
-def draw_white_keys(black, height, perspective_keys, t):
+def draw_white_keys(black, height, keyboard, t):
     i = 0
     for num in t:
-        if (i == 1) | (i == 5) | (i == 8) | (i == 12) | (i == 15) | (i == 19) | (i == 22) | (i == 26) | (i == 29):
-            cv2.line(perspective_keys, (round(num), 0), (round(num), height), (0, 0, 255), 2)
+        if i in [0, 1, 5, 8, 12, 15, 19, 22, 26, 29]:
+            cv2.line(keyboard, (round(num), 0), (round(num), height), (0, 0, 255), 2)
         else:
-            cv2.line(perspective_keys, (round(num), 0), (round(num), black), (0, 0, 255), 2)
+            cv2.line(keyboard, (round(num), 0), (round(num), black), (0, 0, 255), 2)
         i += 1
 
 

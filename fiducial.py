@@ -25,7 +25,6 @@ def fiducial_detect(image):
 
     return min_y, max_y
 
-
 # if __name__ == '__main__':
 #     img = cv2.imread('original1.jpg')
 #     points = fiducial_detect(img)
