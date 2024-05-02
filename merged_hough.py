@@ -105,6 +105,7 @@ def hough_get_distance(line1, line2):
 
 # hough_merge_pipeline: Creates the pipeline of all the merged lines and appends the merged lines to a list
 #                         input: min - changeable for the minimum distance the segments must be apart to be merged
+# This code has been adapted from Virtual Paper Piano - Aitken and Green, 2023
 def hough_merge_pipeline(lines, min):
     super_lines_final = []
     super_lines = []
@@ -162,7 +163,7 @@ def hough_merged_image(img, g1, g2, g3, min):
 
     merged_lines_x = flatten_and_merge(_lines, min)
 
-    return merged_lines_x  # , merged_lines_all # as merged_lines_y not required for future work
+    return merged_lines_x
 
 
 def combine(line1, line2, thresh_dist, thresh_angle):

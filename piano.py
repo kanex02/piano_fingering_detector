@@ -2,6 +2,8 @@
 # piano.py:  Main file to run to play the piano program
 # - - - - - - - - - - - - - - - - - - - - - - - - -
 import itertools
+import time
+
 import numpy as np
 import cv2
 from fiducial import *
@@ -87,6 +89,7 @@ def main():
         os.mkdir("predictions")
 
     # take_reference_image("predictions/original.jpg")
+    start = time.time()
 
     # - - - - - - - - - Find fiducial location - - - - - - - - - - - - - - - - - -
     img = cv2.imread("predictions/original.jpg")
@@ -120,7 +123,7 @@ def main():
     img = cv2.imread('predictions/cropped.jpg')
 
     for line in merged_lines_x:
-        cv2.line(img, (line[0][0], line[0][1]), (line[1][0], line[1][1]), (0, 0, 255), 2)
+        cv2.line(img, (line[0][0], line[0][1]), (line[1][0], line[1][1]), (0, 0, 255), 4)
 
     cv2.imwrite('predictions/hough.jpg', img)
 
@@ -129,7 +132,7 @@ def main():
     img = cv2.imread('predictions/cropped.jpg')
     merge_close(merged_lines_x, 30, 1)
     for line in merged_lines_x:
-        cv2.line(img, (line[0][0], line[0][1]), (line[1][0], line[1][1]), (0, 0, 255), 2)
+        cv2.line(img, (line[0][0], line[0][1]), (line[1][0], line[1][1]), (0, 0, 255), 4)
     cv2.imwrite('predictions/merged.jpg', img)
 
     # - - - - - - Find longest horizontal lines for keyboard edges - - - - - - - -
@@ -146,7 +149,7 @@ def main():
     p = cv2.imread('predictions/cropped.jpg')
     for e in ed[0:2]:
         e.sort()
-        cv2.line(p, e[0], e[1], (255, 0, 0), 2)
+        cv2.line(p, e[0], e[1], (0, 0, 255), 4)
     cv2.imwrite('predictions/selected_lines.jpg', p)  # draw longest two lines onto image and save
 
     ed.sort(key=lambda x: x[0][1])
@@ -208,6 +211,8 @@ def main():
 
     cv2.imwrite('predictions/transformed_withlines.jpg', perspective_keys)  # saves drawn on lines
 
+    print(time.time() - start)
+
     # # - - - - - - - - - - - Start of main function to run in real-time  - - - - - - - - - - - - - -
 
     cap = cv2.VideoCapture(0)  # Open the first camera connected to the computer.
@@ -226,7 +231,10 @@ def main():
 
     midi.init()
     midi_input = midi.Input(midi.get_default_input_id())
+    # video_out = cv2.VideoWriter('capture.avi', cv2.VideoWriter_fourcc(*'DIVX'), 20.0, (960, 540))
     output = []
+
+    times = []
 
     while True:
 
@@ -234,14 +242,14 @@ def main():
         new_img = cv2.undistort(new_img, camera_matrix, distortion_coeff, None, new_camera_matrix)
         height, width = new_img.shape[:2]
 
-        warped = cv2.warpPerspective(new_img, M, (width, height))
-        draw_white_keys(black_key_base_coord, height, warped, white_note_borders)
-        draw_black_keys(black_key_base_coord, height, warped, black_keys)
+        # draw_white_keys(black_key_base_coord, height, warped, white_note_borders)
+        # draw_black_keys(black_key_base_coord, height, warped, black_keys)
 
         if midi_input.poll():
             event = midi_input.read(1)
             if event[0][0][0] == MIDI_KEY_DOWN:
-
+                warped = cv2.warpPerspective(new_img, M, (width, height))
+                keydown_start = time.time()
                 # Find location of fingertips in np arrays
                 fingers = hand_tracker.fingers_find(new_img, width, height)
 
@@ -274,12 +282,17 @@ def main():
                 else:
                     print(note_name, 'MISSED')
                     output.append(note_name + ';missed\n')
+                times.append(time.time()-keydown_start)
 
-        scaled_down = cv2.resize(warped, (960, 540))
+        scaled_down = cv2.resize(new_img, (960, 540))
+        # video_out.write(scaled_down)
         cv2.imshow("Image", scaled_down)  # show current seen image from camera lens
         if cv2.waitKey(1) != -1:
             break
 
+    print(len(times))
+    print(sum(times)/len(times))
+    # video_out.release()
     file = open("output.txt", "w")
     file.writelines(output)
     file.close()
@@ -323,16 +336,16 @@ def finger_transform(M, finger_point):
 def draw_black_keys(black, height, keyboard, black_keys):
     for key in black_keys:
         for x in key:
-            cv2.line(keyboard, (x, black), (x, height), (255, 0, 0), 2)
+            cv2.line(keyboard, (x, black), (x, height), (0, 255, 0), 4)
 
 
 def draw_white_keys(black, height, keyboard, t):
     i = 0
     for num in t:
         if i in [0, 1, 5, 8, 12, 15, 19, 22, 26, 29]:
-            cv2.line(keyboard, (round(num), 0), (round(num), height), (0, 0, 255), 2)
+            cv2.line(keyboard, (round(num), 0), (round(num), height), (0, 0, 255), 4)
         else:
-            cv2.line(keyboard, (round(num), 0), (round(num), black), (0, 0, 255), 2)
+            cv2.line(keyboard, (round(num), 0), (round(num), black), (0, 0, 255), 4)
         i += 1
 
 
