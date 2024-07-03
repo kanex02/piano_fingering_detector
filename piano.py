@@ -1,8 +1,4 @@
-# - - - - - - - - - - - - - - - - - - - - - - - - - 
-# piano.py:  Main file to run to play the piano program
-# - - - - - - - - - - - - - - - - - - - - - - - - -
 import itertools
-import time
 
 import numpy as np
 import cv2
@@ -84,81 +80,68 @@ FINGERS = {
 
 
 def main():
-    print(os.getcwd())
+    # Create a folder to store intermediate stages of the setup phase
     if not os.path.exists("predictions"):
         os.mkdir("predictions")
 
-    # take_reference_image("predictions/original.jpg")
-    start = time.time()
+    # Comment out the line below to use original.jpg instead of taking a new image
+    take_reference_image("predictions/original.jpg")
 
-    # - - - - - - - - - Find fiducial location - - - - - - - - - - - - - - - - - -
+    # Crop image
     img = cv2.imread("predictions/original.jpg")
     top, bottom = fiducial_detect(img)
+    # Set all pixels outside the range to black
     img[0:top - 20, 0:] = list(itertools.repeat(list(itertools.repeat([0, 0, 0], len(img[0]))), top - 20))
-    img[bottom:1080, 0:] = list(itertools.repeat(list(itertools.repeat([0, 0, 0], len(img[0]))), 1080-bottom))
+    img[bottom:1080, 0:] = list(itertools.repeat(list(itertools.repeat([0, 0, 0], len(img[0]))), 1080 - bottom))
     cv2.imwrite("predictions/cropped.jpg", img)
-    # #
-    # return
 
-    # - - - - - - Contrast - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
+    # Image adjustments
     img = cv2.imread("predictions/cropped.jpg")
     img = cv2.blur(img, (20, 5))
     img = cv2.addWeighted(img, 10, img, 0, -1500)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     cv2.imwrite('predictions/contrast.jpg', img)
 
-    # return
-
-    # - - - - - - Canny - - - - - - - - - - - - - - - - -
+    # Canny
     img = cv2.imread('predictions/contrast.jpg')
-
     edges = cv2.Canny(img, threshold1=80, threshold2=130)
-    cv2.imwrite('predictions/canny.jpg', edges)  # Save the image Canny Edge Detection as an image
+    cv2.imwrite('predictions/canny.jpg', edges)
 
-    # - - - - - - - - Hough - - -
-
+    # Hough
     merged_lines_x = hough_merged_image(edges, 9, 10, 35, 10)
-
     img = cv2.imread('predictions/cropped.jpg')
-
     for line in merged_lines_x:
         cv2.line(img, (line[0][0], line[0][1]), (line[1][0], line[1][1]), (0, 0, 255), 4)
-
     cv2.imwrite('predictions/hough.jpg', img)
 
-    # - - - - - - - - - - - - - Merge - - - - - - - - - - - - - - - -
-
+    # Merge lines
     img = cv2.imread('predictions/cropped.jpg')
     merge_close(merged_lines_x, 30, 1)
     for line in merged_lines_x:
         cv2.line(img, (line[0][0], line[0][1]), (line[1][0], line[1][1]), (0, 0, 255), 4)
     cv2.imwrite('predictions/merged.jpg', img)
 
-    # - - - - - - Find longest horizontal lines for keyboard edges - - - - - - - -
+    # Find two longest lines between the fiducial markers - they are the keyboard edges
     horizontals = []
-    threshold_size = 200  # size threshold to determine if line is long enough
-
     for line in merged_lines_x:
-        if top < line[0][1] < bottom-40 and top < line[1][1] < bottom-40:
-            if abs(line[0][0] - line[1][0]) > threshold_size:
-                horizontals.append(sorted(line))
-
-    ed = sorted(horizontals, key=lambda x: (x[0][0]-x[1][0])**2 + (x[0][1]-x[1][1]) ** 2, reverse=True)  # sort by length
-
+        if top < line[0][1] < bottom - 40 and top < line[1][1] < bottom - 40:
+            horizontals.append(sorted(line))
+    ed = sorted(horizontals, key=lambda x: (x[0][0] - x[1][0]) ** 2 + (x[0][1] - x[1][1]) ** 2, reverse=True)
+    # Draw the lines onto the image and save
     p = cv2.imread('predictions/cropped.jpg')
     for e in ed[0:2]:
         e.sort()
         cv2.line(p, e[0], e[1], (0, 0, 255), 4)
-    cv2.imwrite('predictions/selected_lines.jpg', p)  # draw longest two lines onto image and save
+    cv2.imwrite('predictions/selected_lines.jpg', p)
 
+    # Sort from top to bottom
     ed.sort(key=lambda x: x[0][1])
 
     # Elongate top line since the keyboard is a little rounded
-    ed[0][0] = (ed[0][0][0]-10, ed[0][0][1])
-    ed[0][1] = (ed[0][1][0]+10, ed[0][1][1])
+    ed[0][0] = (ed[0][0][0] - 10, ed[0][0][1])
+    ed[0][1] = (ed[0][1][0] + 10, ed[0][1][1])
 
-    # Corners of keyboard taken from the reference image
+    # Corners of keyboard taken from the reference image for perspective transform
     vert = [(0, 0)] * 4
     vert[0] = ed[0][0]
     vert[1] = ed[0][1]
@@ -166,29 +149,27 @@ def main():
     vert[3] = ed[1][0]
     vert = np.float32(vert)
 
-    # Corners of output
+    # Corners of output for perspective transform
     height, width = p.shape[:2]
     outs = np.float32([(0, 0), (width, 0), (width, height), (0, height)])
 
-    # # - - - - - - - - - - - - Perspective Transform - - - - - - - - - - - - - - - - - - -
+    # Perspective transform
     perspective_image = cv2.imread("predictions/original.jpg")
     M = cv2.getPerspectiveTransform(vert, outs)
     out = cv2.warpPerspective(perspective_image, M, (width, height))
     cv2.imwrite('predictions/transformed.jpg', out)  # save perspective transform image
 
-    # # - - - - - - - - - - - Draw on key segmentation - - - - - - - - - - - - - - - - - -
+    # Key segmentation
     perspective_keys = out.copy()
-
     black_key_base_coord = 380  # coordinate of base of black keys
-
-    space = 27  # distance from white key to black key
-    extra_y = 14  # extra distance when two white keys together
-    key = 50  # distance from white key to white key
+    space = 27  # distance between black keys
+    extra_y = 14  # extra distance when two white keys together (such as between C and B)
+    key = 50  # width of black key
 
     spaces = np.array(
         [
             90,
-            key, space, key, space, key, 2 * space + extra_y, key, space, key,
+            key, space, key, space, key, 2 * space + extra_y, key, space, key,  # One octave (in reverse)
                                          2 * space + extra_y,
             key, space, key, space, key, 2 * space + extra_y, key, space, key,
                                          2 * space + extra_y,
@@ -196,7 +177,7 @@ def main():
                                          2 * space + extra_y,
             key, space, key, space, key, 2 * space + extra_y, key, space, key,
         ]
-    )  # distance array
+    )
     black_keys = []
     total = 0
     i = 0
@@ -211,10 +192,7 @@ def main():
 
     cv2.imwrite('predictions/transformed_withlines.jpg', perspective_keys)  # saves drawn on lines
 
-    print(time.time() - start)
-
-    # # - - - - - - - - - - - Start of main function to run in real-time  - - - - - - - - - - - - - -
-
+    # REAL TIME PHASE
     cap = cv2.VideoCapture(0)  # Open the first camera connected to the computer.
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
@@ -231,29 +209,20 @@ def main():
 
     midi.init()
     midi_input = midi.Input(midi.get_default_input_id())
-    # video_out = cv2.VideoWriter('capture.avi', cv2.VideoWriter_fourcc(*'DIVX'), 20.0, (960, 540))
     output = []
 
-    times = []
-
     while True:
-
         success, new_img = cap.read()
         new_img = cv2.undistort(new_img, camera_matrix, distortion_coeff, None, new_camera_matrix)
         height, width = new_img.shape[:2]
-
-        # draw_white_keys(black_key_base_coord, height, warped, white_note_borders)
-        # draw_black_keys(black_key_base_coord, height, warped, black_keys)
 
         if midi_input.poll():
             event = midi_input.read(1)
             if event[0][0][0] == MIDI_KEY_DOWN:
                 warped = cv2.warpPerspective(new_img, M, (width, height))
-                keydown_start = time.time()
-                # Find location of fingertips in np arrays
                 fingers = hand_tracker.fingers_find(new_img, width, height)
 
-                finger_points = tuple(map(lambda point: finger_transform(M, point), fingers))
+                finger_points = tuple(map(lambda finger_point: finger_transform(M, finger_point), fingers))
 
                 for point in finger_points:
                     cv2.circle(warped, point, 3, (0, 0, 255), 6)
@@ -282,17 +251,12 @@ def main():
                 else:
                     print(note_name, 'MISSED')
                     output.append(note_name + ';missed\n')
-                times.append(time.time()-keydown_start)
 
         scaled_down = cv2.resize(new_img, (960, 540))
-        # video_out.write(scaled_down)
-        cv2.imshow("Image", scaled_down)  # show current seen image from camera lens
+        cv2.imshow("Image", scaled_down)
         if cv2.waitKey(1) != -1:
             break
 
-    print(len(times))
-    print(sum(times)/len(times))
-    # video_out.release()
     file = open("output.txt", "w")
     file.writelines(output)
     file.close()

@@ -1,5 +1,5 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - 
-# hough.py:  Functions to compute a merged Hough Line Transform
+# hough.py:  Functions to compute a merged Hough Line Transform. Much of the code in here is from Aitken and Green, 2022
 #                   where segments of lines close together are merged
 #                   to form one line
 #                   Sourced online from: https://stackoverflow.com/questions/45531074/how-to-merge-lines-after-houghlinesp
@@ -44,19 +44,6 @@ def hough_sort(lines, use_log=False):
             print("use x")
 
     return [points[0], points[len(points) - 1]]
-
-
-# # hough_lines_close: Finds the lines closest to the current searched for line
-# def hough_lines_close(line1, line2):
-#     dist1 = math.hypot(line1[0][0] - line2[0][0], line1[0][0] - line2[0][1])
-#     dist2 = math.hypot(line1[0][2] - line2[0][0], line1[0][3] - line2[0][1])
-#     dist3 = math.hypot(line1[0][0] - line2[0][2], line1[0][0] - line2[0][3])
-#     dist4 = math.hypot(line1[0][2] - line2[0][2], line1[0][3] - line2[0][3])
-
-#     if (min(dist1,dist2,dist3,dist4) < 100):
-#         return True
-#     else:
-#         return False
 
 # hough_lines_magnitue: Computes the magnitude of each individual line
 def hough_lines_magnitude(x1, y1, x2, y2):
